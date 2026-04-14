@@ -1,10 +1,10 @@
-
 import streamlit as st
 import pandas as pd
 import numpy as np
 import plotly.express as px
 import plotly.graph_objects as go
 from datetime import timedelta
+from io import BytesIO
 
 st.set_page_config(layout="wide", page_title="Superdeck (Streamlit)")
 
@@ -17,38 +17,50 @@ def load_csv(path: str) -> pd.DataFrame:
 
 @st.cache_data
 def load_parquet(path: str) -> pd.DataFrame:
+    """Load Parquet files efficiently"""
     return pd.read_parquet(path)
 
 @st.cache_data
-def load_uploaded_file(contents: bytes, file_type: str) -> pd.DataFrame:
-    from io import BytesIO
-    if file_type == 'csv':
-        return pd.read_csv(BytesIO(contents), on_bad_lines='skip', low_memory=False)
-    elif file_type == 'parquet':
+def load_uploaded_file(contents: bytes, filename: str) -> pd.DataFrame:
+    """Load uploaded CSV or Parquet files"""
+    if filename.endswith('.parquet') or filename.endswith('.pq'):
         return pd.read_parquet(BytesIO(contents))
     else:
-        raise ValueError(f"Unsupported file type: {file_type}")
+        return pd.read_csv(BytesIO(contents), on_bad_lines='skip', low_memory=False)
 
 def smart_load():
     st.sidebar.markdown("### Upload data (CSV or Parquet) or use default")
-    uploaded = st.sidebar.file_uploader("Upload CSV or Parquet file", type=['csv', 'parquet'])
+    uploaded = st.sidebar.file_uploader(
+        "Upload DAILY_POS_TRN_ITEMS (CSV or Parquet)", 
+        type=['csv', 'parquet', 'pq']
+    )
+    
     if uploaded is not None:
-        file_type = uploaded.name.split('.')[-1].lower()
-        with st.spinner(f"Parsing uploaded {file_type.upper()}..."):
-            df = load_uploaded_file(uploaded.getvalue(), file_type)
-        st.sidebar.success(f"Loaded uploaded {file_type.upper()}")
+        with st.spinner("Parsing uploaded file..."):
+            df = load_uploaded_file(uploaded.getvalue(), uploaded.name)
+        st.sidebar.success("✅ Loaded uploaded file")
         return df
 
-    # try default path (optional)
-    default_path = "/content/DAILY_POS_TRN_ITEMS_2025-10-21.csv"
-    try:
-        with st.spinner(f"Loading default CSV: {default_path}"):
-            df = load_csv(default_path)
-        st.sidebar.info(f"Loaded default path: {default_path}")
-        return df
-    except Exception:
-        st.sidebar.warning("No default CSV found. Please upload a CSV or Parquet file to run the app.")
-        return None
+    # Try default path (optional)
+    default_paths = [
+        "/content/DAILY_POS_TRN_ITEMS_2025-10-21.parquet",
+        "/content/DAILY_POS_TRN_ITEMS_2025-10-21.csv",
+    ]
+    
+    for default_path in default_paths:
+        try:
+            with st.spinner(f"Loading default file: {default_path}"):
+                if default_path.endswith('.parquet') or default_path.endswith('.pq'):
+                    df = load_parquet(default_path)
+                else:
+                    df = load_csv(default_path)
+            st.sidebar.info(f"✅ Loaded default path: {default_path}")
+            return df
+        except Exception:
+            continue
+    
+    st.sidebar.warning("❌ No data file found. Please upload a CSV or Parquet file to run the app.")
+    return None
 
 # -----------------------
 # Robust cleaning + derived columns (cached)
